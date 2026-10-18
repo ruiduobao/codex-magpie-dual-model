@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex + Magpie 双模型 / Dual-Model"
+  short_description: "强模型规划，DeepSeek 执行 / strong model plans, DeepSeek builds"
+  default_prompt: "Set up or diagnose Codex multi-model routing through Magpie: a strong lead model that plans and reviews, plus a cheaper subagent model that implements. Run scripts/doctor.py check first."
