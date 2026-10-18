@@ -312,8 +312,13 @@ def check_roles(rep: Report, cfg: dict) -> None:
         rep.add(OK, "No role files; default subagent model applies to every spawn")
         return
 
-    intended = (agents_dir_models() or (cfg.get("agents") or {}).get("default_subagent_model"))
+    intended = agents_dir_models()
+    if not intended:
+        rep.add(WARN, "No default_subagent_model, so role models cannot be compared",
+                "Set [agents] default_subagent_model, or compare against the lead model.")
+        intended = cfg.get("model")
     drifted: list[str] = []
+    models_seen: dict[str, list[str]] = {}
 
     for path in roles:
         text = path.read_text(encoding="utf-8", errors="replace")
@@ -332,11 +337,20 @@ def check_roles(rep: Report, cfg: dict) -> None:
         detail = f"model={role_model or 'inherited'}"
         if effort:
             detail += f", effort={effort.group(1)}"
+        if role_model:
+            models_seen.setdefault(role_model, []).append(name)
         if intended and role_model and role_model != intended:
             drifted.append(f"{name} -> {role_model}")
             rep.add(FAIL, f"Role '{name}' overrides to {role_model}", detail)
         else:
             rep.add(OK, f"Role '{name}' loaded ({path.name})", detail)
+
+    if len(models_seen) > 1:
+        breakdown = "; ".join(
+            f"{m} x{len(names)}" for m, names in sorted(models_seen.items(), key=lambda kv: -len(kv[1]))
+        )
+        rep.add(WARN, f"Roles resolve to {len(models_seen)} different models",
+                f"{breakdown}\nSpawns bill whichever role was requested.")
 
     if drifted:
         rep.add(FAIL, f"{len(drifted)} role(s) do not use the intended subagent model",

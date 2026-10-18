@@ -8,9 +8,9 @@ Match the exact error text first; these messages are specific enough to identify
 
 ### A subagent bills an expensive model despite correct config
 
-**Cause:** A role file carries its own `model`, and a role's model beats `[agents] default_subagent_model`. With `oh-my-codex`, 18 generated roles hardcode `gpt-6-astra` or `gpt-6-luna`. The lead spawning `agent_type="explore"` gets astra, not the default.
+**Cause:** A role file carries its own `model`, and a role's model beats `[agents] default_subagent_model`. With `oh-my-codex`, every generated role hardcodes a model — `gpt-6-astra` for `explore` / `planner` / `architect` / `researcher`, `gpt-6-luna` for the rest. The lead spawning `agent_type="explore"` gets astra, not the default. Check the count in `~/.codex/agents` rather than trusting a fixed number.
 
-**原因：** 角色文件自带 `model`，其优先级高于 `[agents] default_subagent_model`。装了 `oh-my-codex` 时，18 个生成的角色硬编码了 `gpt-6-astra` 或 `gpt-6-luna`。主代理派生 `agent_type="explore"` 拿到的是 astra，不是默认模型。
+**原因：** 角色文件自带 `model`，其优先级高于 `[agents] default_subagent_model`。装了 `oh-my-codex` 时，每个生成的角色都写死了模型——`explore` / `planner` / `architect` / `researcher` 是 `gpt-6-astra`，其余是 `gpt-6-luna`。主代理派生 `agent_type="explore"` 拿到的是 astra，不是默认模型。角色数量以 `~/.codex/agents` 实际内容为准，不要相信固定数字。
 
 **Diagnose:** confirm which role was requested, then which model answered.
 
@@ -25,6 +25,10 @@ The rollout file records the `agent_type` passed to `spawn_agent`; the gateway l
 
 会话记录里有传给 `spawn_agent` 的 `agent_type`，网关日志里有实际服务的模型。配置文件与子代理自述都不能作为证据。
 
+Note the trigger: a run can be correct before the change and wrong after only because it is an **old thread**. Existing sessions keep their original protocol and role set; only a new thread picks up the new config. If a fresh session still bills the wrong model, the cause is the role files, not the session age.
+
+注意触发条件：改动前后表现不同，可能只是因为那是**旧会话**。已有会话沿用启动时的协议与角色集，只有新会话才读取新配置。若新会话仍然走错模型，原因就在角色文件，与会话新旧无关。
+
 **Fix:** pin all roles while keeping each role's prompt.
 
 **修复：** 固定全部角色，同时保留各自提示词。
@@ -32,6 +36,7 @@ The rollout file records the `agent_type` passed to `spawn_agent`; the gateway l
 ```bash
 python scripts/doctor.py pin-roles --model tecent-free/deepseek-v4.1-flash --effort high
 omx setup     # regenerate generated role files
+python scripts/doctor.py roles       # confirm no role drifted
 ```
 
 `pin-roles` writes `agentModels` / `agentReasoning` into `~/.codex/.omx-config.json`, which `resolveAgentModel` reads before the hardcoded `exactModel`. A later `omx setup` keeps the pin.

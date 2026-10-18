@@ -1,6 +1,6 @@
 ---
 name: codex-magpie-dual-model
-description: Configure and repair Codex CLI/Codex app multi-model routing through the Magpie gateway, so a strong model (GPT-6.1 Sol or any Codex-plan model) plans and reviews while a cheaper model (DeepSeek via Magpie) writes code and runs tests as a native subagent. Diagnoses sealed-subagent failures, the Magpie config rewrite, and unsupported reasoning levels. Use when setting up, migrating, re-validating after a Codex or Magpie upgrade, or troubleshooting "task was sealed" / "Unknown model" in Codex subagents. 配置与修复 Codex 经由 Magpie 网关的多模型分工：强模型负责规划与验收，DeepSeek 等廉价模型作为原生子代理执行编码与测试。可诊断子代理任务被封条加密、Magpie 回写配置、推理档位不支持等问题。适用于首次配置、Codex 或 Magpie 升级后重新校验、以及排查 "task was sealed" 或 "Unknown model" 报错。
+description: Configure and repair Codex CLI/Codex app multi-model routing through the Magpie gateway, so a strong model (GPT-6.1 Sol or any Codex-plan model) plans and reviews while a cheaper model (DeepSeek via Magpie) writes code and runs tests as a native subagent. Diagnoses sealed-subagent failures, the Magpie config rewrite, unsupported reasoning levels, and agent role files that silently override the default subagent model with an expensive one. Use when setting up, migrating, re-validating after a Codex or Magpie upgrade, or troubleshooting "task was sealed" / "Unknown model" in Codex subagents, or when subagents bill the wrong model despite correct config. 配置与修复 Codex 经由 Magpie 网关的多模型分工：强模型负责规划与验收，DeepSeek 等廉价模型作为原生子代理执行编码与测试。可诊断子代理任务被封条加密、Magpie 回写配置、推理档位不支持，以及角色文件静默覆盖默认子代理模型导致误用昂贵模型等问题。适用于首次配置、Codex 或 Magpie 升级后重新校验，以及排查 "task was sealed"、"Unknown model" 或"配置正确但子代理仍走错模型"。
 ---
 
 # Codex + Magpie Dual-Model Routing / Codex + Magpie 双模型分工
@@ -64,9 +64,9 @@ This is the one that looks like a total failure of the setup. A workspace config
 
 这一条最容易被误判成整套配置失效。配置完全正确的环境，仍然可能在每个子代理上烧最贵的模型——因为 `default_subagent_model` 只在“派生时未指定模型**且**没有角色覆盖”时才生效。角色文件自带 `model`，优先级更高。
 
-With `oh-my-codex` installed, `~/.codex/agents/*.toml` are generated from built-in definitions that hardcode `gpt-6-astra` and `gpt-6-luna` for 18 roles. The lead asks for `agent_type="explore"` or `"researcher"`, and the gateway serves `gpt-6-astra` even though the default subagent model says DeepSeek.
+With `oh-my-codex` installed, `~/.codex/agents/*.toml` are generated from built-in definitions. In the version tested (oh-my-codex 0.21.8) every generated role hardcodes a model — `gpt-6-astra` for `explore`, `planner`, `architect`, `researcher`, and `gpt-6-luna` for the rest. The lead asks for `agent_type="explore"` or `"researcher"`, and the gateway serves `gpt-6-astra` even though the default subagent model says DeepSeek. Do not hardcode the role count; read it from the directory.
 
-装了 `oh-my-codex` 时，`~/.codex/agents/*.toml` 由内置定义生成，18 个角色硬编码了 `gpt-6-astra` 和 `gpt-6-luna`。主代理一喊 `agent_type="explore"` 或 `"researcher"`，网关就发 `gpt-6-astra`，哪怕默认子代理模型写的是 DeepSeek。
+装了 `oh-my-codex` 时，`~/.codex/agents/*.toml` 由内置定义生成。在实测版本（oh-my-codex 0.21.8）里，每个生成的角色都写死了模型——`explore`、`planner`、`architect`、`researcher` 是 `gpt-6-astra`，其余是 `gpt-6-luna`。主代理一喊 `agent_type="explore"` 或 `"researcher"`，网关就发 `gpt-6-astra`，哪怕默认子代理模型写的是 DeepSeek。不要把角色数量写死，以目录实际内容为准。
 
 Diagnose from the rollout, not from config. The `spawn_agent` call records the `agent_type`, and the gateway log records what answered:
 
@@ -89,9 +89,20 @@ Fix through OMX's own config so a later `omx setup` does not undo it:
 }
 ```
 
-`agentModels` is read with the highest priority in `resolveAgentModel`, above the hardcoded `exactModel`. Then re-run `omx setup` so the role files regenerate. Listing every role is tedious; `scripts/doctor.py pin-roles` writes the mapping for all of them.
+`agentModels` is read with the highest priority in `resolveAgentModel`, above the hardcoded `exactModel`. Then re-run `omx setup` so the role files regenerate.
 
-`agentModels` 在 `resolveAgentModel` 中优先级最高，压过硬编码的 `exactModel`。之后重跑 `omx setup` 让角色文件重新生成。逐个列角色很繁琐，`scripts/doctor.py pin-roles` 可以一次写全。
+`agentModels` 在 `resolveAgentModel` 中优先级最高，压过硬编码的 `exactModel`。之后重跑 `omx setup` 让角色文件重新生成。
+
+Listing every role by hand is error-prone. `pin-roles` enumerates the role files and writes the mapping for all of them, defaulting the model to your `[agents] default_subagent_model`:
+
+逐个手写角色容易漏。`pin-roles` 会枚举角色文件并全部写入，模型默认取你的 `[agents] default_subagent_model`：
+
+```bash
+python scripts/doctor.py pin-roles                                   # every role -> default subagent model
+python scripts/doctor.py pin-roles --model tecent-free/deepseek-v4.1-flash --effort high
+omx setup                                                            # regenerate role files
+python scripts/doctor.py roles                                       # confirm none drifted
+```
 
 If you do not use OMX, edit the `model` line in each role file directly — but expect any generator to overwrite it.
 

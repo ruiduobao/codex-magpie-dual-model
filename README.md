@@ -22,6 +22,8 @@
 | 推理档位模型相关 | `medium` 对某些模型不存在 |
 | 角色文件覆盖默认值 | 配置全对，子代理仍烧 `gpt-6-astra` |
 
+最后一条最隐蔽：`[agents] default_subagent_model` 只在“派生时未指定模型且没有角色覆盖”时生效。装着 `oh-my-codex` 时，`~/.codex/agents/*.toml` 里每个角色都写死了模型，`explore` / `researcher` 之类会直接绕开你的默认值。`doctor.py roles` 会把偏离的角色逐个列出来。
+
 ### 安装
 
 ```bash
@@ -125,6 +127,8 @@ The routing itself is easy. Four traps are what cost people hours, and this skil
 | Task sealing | `task was sealed`; DeepSeek cannot read the task |
 | Reasoning levels are per-model | `medium` does not exist on some models |
 | Role files beat the default | Config is right, subagents still bill `gpt-6-astra` |
+
+The last one is the subtle one: `[agents] default_subagent_model` applies only when a spawn names no model **and** no role file overrides it. With `oh-my-codex` installed, every role in `~/.codex/agents/*.toml` hardcodes a model, so `explore` / `researcher` bypass your default entirely. `doctor.py roles` lists every role that drifted.
 
 ### Install
 
