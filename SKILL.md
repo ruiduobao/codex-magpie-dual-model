@@ -108,6 +108,32 @@ If you do not use OMX, edit the `model` line in each role file directly — but 
 
 如果你不用 OMX，直接改各角色文件的 `model` 行也可以，但要预期生成器会覆盖。
 
+### 6. Background jobs look like subagent misroutes / 后台任务会被误认成子代理走错
+
+Before concluding that subagents ignore your config, check the `kind` field in `~/.config/magpie/usage.jsonl`. Requests with `kind: "memory_consolidation"` are Codex's memory jobs, not subagents. They run on their own model, default to a Codex model, and show up as a bare model name with no provider prefix — which reads exactly like a misrouted subagent if you only look at model names.
+
+在断定子代理无视配置之前，先看 `~/.config/magpie/usage.jsonl` 里的 `kind` 字段。`kind: "memory_consolidation"` 是 Codex 的记忆整理任务，不是子代理。它们用自己的模型（默认是 Codex 的模型），日志里表现为不带 provider 前缀的裸模型名——只看模型名的话，和子代理走错完全一样。
+
+```toml
+[memories]
+extract_model = "tecent-free/deepseek-v4.1-flash"
+consolidation_model = "tecent-free/deepseek-v4.1-flash"
+```
+
+`magpie codex memories <provider/model>` writes both. `doctor.py routing` separates background kinds from `collab_spawn` and flags rejected spawns.
+
+`magpie codex memories <provider/model>` 会同时写入这两项。`doctor.py routing` 会把后台类型与 `collab_spawn` 分开显示，并单独标出被拒绝的派生。
+
+### 7. Old sessions keep the old role definitions / 旧会话保留旧的角色定义
+
+A running session reads role files and the model catalog at startup. After changing role files, an existing thread keeps spawning the old models — and may even keep hitting the seal if it started before the preference changed. The evidence is a session whose `collab_spawn` entries all carry the old model.
+
+运行中的会话在启动时读取角色文件和模型目录。改完角色文件后，已有会话仍会按旧模型派生——如果它开启于偏好变更之前，还可能继续撞封条。证据就是该会话的 `collab_spawn` 记录全是旧模型。
+
+There is no migration path. Start a new thread and re-test. Do not debug the config on the basis of an old session.
+
+没有迁移路径。新开会话重测。不要拿旧会话的表现去调配置。
+
 ## Reference layout / 参照配置
 
 ```toml

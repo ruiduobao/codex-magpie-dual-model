@@ -272,6 +272,22 @@ def check_config(rep: Report, cfg: dict) -> None:
     if sub_effort:
         rep.add(OK, f"Subagent effort: {sub_effort}")
 
+    # Codex runs memory extraction and consolidation on their own models. They
+    # are not subagents, but they do bill, and a bare model name here looks
+    # exactly like a subagent misroute in the usage log.
+    memories = cfg.get("memories") or {}
+    for key in ("extract_model", "consolidation_model"):
+        value = memories.get(key)
+        if not value:
+            continue
+        detail = f"memories.{key} = {value}"
+        if lead and value == lead:
+            rep.add(WARN, f"Memory job uses the lead model", detail)
+        elif worker and value != worker:
+            rep.add(WARN, f"Memory job uses a different model than subagents", detail)
+        else:
+            rep.add(OK, f"Memory job model: {value}", detail)
+
     if worker == "on":
         rep.add(FAIL, "default_subagent_model is the literal string \"on\"",
                 "`magpie codex subagent on` wrote this. It is not a switch.\n"
@@ -557,28 +573,66 @@ def routing_summary(limit: int = 40) -> int:
         print("Usage log has no parseable entries", file=sys.stderr)
         return 2
 
-    print(f"{'time':<10} {'requested':<40} {'served':<26} {'provider':<14} session")
+    print(f"{'time':<9} {'requested':<36} {'served':<22} {'kind':<20} {'st':<4} session")
     print("-" * 110)
     for entry in entries:
         stamp = str(entry.get("t", ""))[11:19]
-        req = str(entry.get("req") or entry.get("model") or "-")
-        served = str(entry.get("served") or "-")
-        provider = str(entry.get("provider") or "-")
+        req = str(entry.get("req") or entry.get("model") or "-")[:36]
+        served = str(entry.get("served") or "-")[:22]
+        kind = str(entry.get("kind") or "lead")[:20]
+        status = str(entry.get("status") or "-")
         session = str(entry.get("session") or "-")[:13]
-        print(f"{stamp:<10} {req:<40} {served:<26} {provider:<14} {session}")
+        print(f"{stamp:<9} {req:<36} {served:<22} {kind:<20} {status:<4} {session}")
+
+    # A request's `kind` separates a real subagent from background plumbing.
+    # memory_consolidation / guardian / compaction run on their own models and
+    # are not evidence that subagent routing works.
+    spawns = [e for e in entries if e.get("kind") == "collab_spawn"]
+    others: dict[str, int] = {}
+    for entry in entries:
+        kind = entry.get("kind")
+        if kind and kind != "collab_spawn":
+            others[str(kind)] = others.get(str(kind), 0) + 1
+
+    print()
+    if others:
+        print("Background requests (not subagents, ignore for routing):")
+        for kind, count in sorted(others.items(), key=lambda kv: -kv[1]):
+            models = {str(e.get("served")) for e in entries
+                      if e.get("kind") == kind and e.get("served")}
+            print(f"  {kind}: {count}x -> {', '.join(sorted(models)) or '-'}")
+        print()
+
+    rejected = [e for e in spawns if str(e.get("status")) not in ("200", "None")]
+    if rejected:
+        print(f"{len(rejected)} subagent spawn(s) were REJECTED:")
+        for entry in rejected[-3:]:
+            print(f"  {str(entry.get('t',''))[11:19]} {entry.get('req')} "
+                  f"status={entry.get('status')} err={entry.get('err')}")
+        print("  A sealed-task rejection means the V1 text path is not in effect")
+        print("  for that session. Check codexAgentsV1 and multi_agent_v2, then")
+        print("  START A NEW THREAD - existing sessions keep their protocol.")
+        print()
 
     by_session: dict[str, set[str]] = {}
-    for entry in entries:
+    for entry in spawns:
         if entry.get("session") and entry.get("served"):
             by_session.setdefault(str(entry["session"]), set()).add(str(entry["served"]))
+
+    if spawns:
+        print(f"Subagent spawns: {len(spawns)} ({len(rejected)} rejected)")
     mixed = {s: m for s, m in by_session.items() if len(m) > 1}
-    print()
     if mixed:
         newest = list(mixed)[-1]
-        print(f"Mixed-model sessions found: {len(mixed)}. Newest: {newest[:13]}")
+        print(f"Sessions whose spawns used more than one model: {len(mixed)}. Newest: {newest[:13]}")
         print("  -> " + ", ".join(sorted(mixed[newest])))
-        return 0
-    print("No mixed-model session in this window. Spawn a subagent, then re-run.")
+        return 0 if not rejected else 1
+    if by_session:
+        only = list(by_session.values())[-1]
+        print("Spawned subagents all used: " + ", ".join(sorted(only)))
+        print("That is consistent - a correct setup shows only the subagent model here.")
+        return 0 if not rejected else 1
+    print("No subagent spawn in this window. Spawn one, then re-run.")
     return 1
 
 

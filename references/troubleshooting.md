@@ -6,6 +6,42 @@ Match the exact error text first; these messages are specific enough to identify
 
 ## Error → cause → fix / 报错对照表
 
+### A model you never configured shows up in the usage log
+
+**Cause:** Check the `kind` field before assuming a misroute. `memory_consolidation`, `guardian`, and compaction are Codex's own background jobs. They use their own model and appear as a bare model name with no provider prefix.
+
+**原因：** 先看 `kind` 字段再判断是否走错。`memory_consolidation`、`guardian`、压缩任务是 Codex 自己的后台作业，用自己的模型，日志里是不带 provider 前缀的裸模型名。
+
+```bash
+python scripts/doctor.py routing   # splits collab_spawn from background kinds
+```
+
+**Fix:** point them at the cheap model too.
+
+**修复：** 把它们也指向廉价模型。
+
+```bash
+magpie codex memories tecent-free/deepseek-v4.1-flash
+```
+
+Writes `[memories] extract_model` and `consolidation_model`.
+
+写入 `[memories] extract_model` 与 `consolidation_model`。
+
+### Config is correct but an existing thread still spawns the old model
+
+**Cause:** Sessions read role files and the model catalog at startup. A thread opened before your change keeps the old definitions, and if it predates the `codexAgentsV1` flip it can also keep hitting the seal.
+
+**原因：** 会话在启动时读取角色文件与模型目录。在你改动前开启的会话沿用旧定义；若它还早于 `codexAgentsV1` 的变更，还会继续撞封条。
+
+**Diagnose:** look at `collab_spawn` entries for that session id — all carrying the old model is conclusive.
+
+**诊断：** 看该 session id 的 `collab_spawn` 记录，全是旧模型即可确定。
+
+**Fix:** start a new thread. There is no in-place migration, and debugging config against an old session wastes time.
+
+**修复：** 新开会话。没有原地迁移，拿旧会话调配置只会浪费时间。
+
 ### A subagent bills an expensive model despite correct config
 
 **Cause:** A role file carries its own `model`, and a role's model beats `[agents] default_subagent_model`. With `oh-my-codex`, every generated role hardcodes a model — `gpt-6-astra` for `explore` / `planner` / `architect` / `researcher`, `gpt-6-luna` for the rest. The lead spawning `agent_type="explore"` gets astra, not the default. Check the count in `~/.codex/agents` rather than trusting a fixed number.
