@@ -161,6 +161,31 @@ Recovery: `doctor.py check` reports the lead model as invalid, and `doctor.py fi
 
 恢复办法：`doctor.py check` 会把主模型判为无效，`doctor.py fix` 不会替你猜。用 `magpie codex <provider/model>` 改回来。
 
+### 9. `omx setup` can delete the routing line and disconnect Codex / `omx setup` 会删掉路由行导致断连
+
+Symptom: Codex suddenly cannot connect while the VPN is fine and Magpie is running. `omx setup` rewrites top-level config to its own template and drops `openai_base_url`, which is the only path Codex-plan models use to reach the gateway. It also strips the provider prefix from `model` and resets the lead effort.
+
+症状：VPN 正常、Magpie 也在跑，但 Codex 突然连不上。`omx setup` 会按自己的模板重写顶层配置，删掉 `openai_base_url`——而这是 Codex 订阅模型通往网关的唯一路径。它还会去掉 `model` 的 provider 前缀并重置主代理档位。
+
+```toml
+# top level, above any [table]
+openai_base_url = "http://127.0.0.1:3425/backend-api/codex"
+model = "codex/gpt-6.1-sol"
+model_reasoning_effort = "high"
+```
+
+Why it looks like a network problem: without that line Codex calls `chatgpt.com` directly. On a restricted network the request hangs until it times out, which reads as "disconnected" even though the gateway was never involved.
+
+为什么看起来像网络问题：没有这一行，Codex 会直接连 `chatgpt.com`。在受限网络下请求会挂到超时，表现就是"断连"，而网关其实从未参与。
+
+`doctor.py check` reports `openai_base_url is missing but the lead is a Codex-plan model` and exits non-zero. Run it after every `omx setup`. Recover a lost line from a backup:
+
+`doctor.py check` 会报 `openai_base_url is missing but the lead is a Codex-plan model` 并以非零退出码结束。每次 `omx setup` 之后都跑一次。丢失的行从备份里取回：
+
+```bash
+grep -l openai_base_url ~/.codex/config.toml.bak-* | tail -1
+```
+
 ## Reference layout / 参照配置
 
 ```toml

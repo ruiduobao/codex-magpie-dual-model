@@ -6,6 +6,33 @@ Match the exact error text first; these messages are specific enough to identify
 
 ## Error → cause → fix / 报错对照表
 
+### Codex cannot connect though the VPN and Magpie are fine
+
+**Cause:** `openai_base_url` is gone from `config.toml`. Codex-plan models reach the gateway through that line only; without it Codex calls chatgpt.com directly and hangs on a restricted network. `omx setup` commonly drops it.
+
+**原因：** `config.toml` 里的 `openai_base_url` 丢了。Codex 订阅模型只通过这一行走到网关；没有它，Codex 直连 chatgpt.com，在受限网络下就会挂起。`omx setup` 经常把它删掉。
+
+**Diagnose:** the gateway is healthy but nothing arrives in its log.
+
+**诊断：** 网关健康，但它的日志里没有任何新请求。
+
+```bash
+python scripts/doctor.py check | head -5
+```
+
+**Fix:**
+
+**修复：**
+
+```toml
+openai_base_url = "http://127.0.0.1:3425/backend-api/codex"
+model = "codex/gpt-6.1-sol"     # keep the provider prefix
+```
+
+A bare `model = "gpt-6.1-sol"` also fails: the name resolves inside Codex's backend, not through Magpie. Check backups for the exact prior value.
+
+裸名 `model = "gpt-6.1-sol"` 同样会失败：这个名字在 Codex 自己的后端解析，不经过 Magpie。可以从备份里找原来的写法。
+
 ### A model you never configured shows up in the usage log
 
 **Cause:** Check the `kind` field before assuming a misroute. `memory_consolidation`, `thread_title`, `guardian`, and compaction are Codex's own background jobs. They use their own model and appear as a bare model name with no provider prefix. Only `collab_spawn` is a subagent. A `thread_title` request in particular lands at the same second as your test spawns, so it reads as a subagent in a UI that lists requests by time.

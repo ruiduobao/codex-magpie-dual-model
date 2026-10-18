@@ -23,6 +23,7 @@
 | 角色文件覆盖默认值 | 配置全对，子代理仍烧 `gpt-6-astra` |
 | 后台任务伪装成子代理 | 日志里出现没配过的模型：`memory_consolidation`、`thread_title` 等 |
 | `magpie codex <词>` 误伤主模型 | 字段名猜错时被当成模型名写进 `model` |
+| `omx setup` 删掉路由行 | 断连，看起来像网络问题，实为 `openai_base_url` 丢失 |
 | 旧会话不更新 | 改完配置，已有会话仍按旧模型派生 |
 
 最后一条最隐蔽：`[agents] default_subagent_model` 只在“派生时未指定模型且没有角色覆盖”时生效。装着 `oh-my-codex` 时，`~/.codex/agents/*.toml` 里每个角色都写死了模型，`explore` / `researcher` 之类会直接绕开你的默认值。`doctor.py roles` 会把偏离的角色逐个列出来。
@@ -132,6 +133,7 @@ The routing itself is easy. Four traps are what cost people hours, and this skil
 | Role files beat the default | Config is right, subagents still bill `gpt-6-astra` |
 | Background jobs masquerade | Unconfigured models in the log: `memory_consolidation`, `thread_title`, etc. |
 | `magpie codex <word>` breaks the lead | An unknown field name is written as the model id |
+| `omx setup` drops the routing line | Disconnects like a network fault; `openai_base_url` is gone |
 | Old sessions do not update | An existing thread keeps spawning the old models |
 
 The last one is the subtle one: `[agents] default_subagent_model` applies only when a spawn names no model **and** no role file overrides it. With `oh-my-codex` installed, every role in `~/.codex/agents/*.toml` hardcodes a model, so `explore` / `researcher` bypass your default entirely. `doctor.py roles` lists every role that drifted.

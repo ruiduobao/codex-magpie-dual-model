@@ -199,6 +199,51 @@ def codex_models() -> dict[str, dict]:
 # --------------------------------------------------------------------------
 
 
+def check_channel(rep: Report, cfg: dict, base: str) -> None:
+    """Codex reaches Magpie by two paths; losing both makes it hang on the real backend."""
+    openai_base = cfg.get("openai_base_url")
+    providers = cfg.get("model_providers") or {}
+    provider_urls = {
+        name: (spec or {}).get("base_url")
+        for name, spec in providers.items()
+        if isinstance(spec, dict) and (spec or {}).get("base_url")
+    }
+    host = base.split("//", 1)[-1]
+
+    if openai_base:
+        if host in openai_base:
+            rep.add(OK, f"Subscription traffic routed via Magpie", f"openai_base_url = {openai_base}")
+        else:
+            rep.add(WARN, "openai_base_url does not point at the gateway",
+                    f"openai_base_url = {openai_base}\nExpected host {host}")
+    elif not any(host in str(u) for u in provider_urls.values()):
+        rep.add(FAIL, "Codex is not routed through Magpie at all",
+                "Neither openai_base_url nor any model_providers.*.base_url points at\n"
+                f"{base}. Codex will call the real backend directly and hang or fail\n"
+                "on restricted networks. A tool such as `omx setup` can drop this line.")
+        return
+    else:
+        # A model_providers entry alone does not carry Codex-plan traffic: those
+        # models reach the backend through openai_base_url specifically.
+        lead_is_codex = str(cfg.get("model") or "").startswith("codex/")
+        if lead_is_codex:
+            rep.add(FAIL, "openai_base_url is missing but the lead is a Codex-plan model",
+                    f"Lead: {cfg.get('model')}\n"
+                    "Codex-plan models reach the backend through openai_base_url only.\n"
+                    f"Without it they call chatgpt.com directly and hang or disconnect.\n"
+                    f"Restore: openai_base_url = \"{base}/backend-api/codex\"\n"
+                    "A tool such as `omx setup` can drop this line.")
+        else:
+            rep.add(OK, "Provider-level routing to Magpie is present",
+                    "openai_base_url is absent; Codex-plan models would not resolve.")
+
+    lead = cfg.get("model") or ""
+    if lead and "/" not in lead:
+        rep.add(WARN, f"Lead model has no provider prefix: {lead}",
+                "A bare name resolves inside Codex's own backend, not through Magpie.\n"
+                "Use a prefixed id such as codex/gpt-6.1-sol.")
+
+
 def check_gateway(rep: Report, base: str) -> bool:
     try:
         http_json(f"{base}/v1/models", timeout=6)
@@ -676,6 +721,7 @@ def main() -> int:
 
     rep = Report()
     reachable = check_gateway(rep, base)
+    check_channel(rep, cfg, base)
     check_config(rep, cfg)
     check_pref(rep)
     check_roles(rep, cfg)
