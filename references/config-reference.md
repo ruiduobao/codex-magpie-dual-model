@@ -71,6 +71,42 @@ What a role **cannot** do: change `model_provider`, change sandbox or approval p
 
 角色**不能**做的事：改 `model_provider`、改沙箱或审批策略、扩大父级权限。角色只能收窄能力或换模型。
 
+## OMX role model overrides / OMX 角色模型覆盖
+
+`~/.codex/.omx-config.json` is read by `oh-my-codex` when it generates role files. `agentModels` has the highest priority in `resolveAgentModel` — above the `exactModel` that `definitions.js` hardcodes.
+
+`oh-my-codex` 生成角色文件时会读 `~/.codex/.omx-config.json`。`agentModels` 在 `resolveAgentModel` 中优先级最高，压过 `definitions.js` 硬编码的 `exactModel`。
+
+```json
+{
+  "agentModels":    { "explore": "tecent-free/deepseek-v4.1-flash" },
+  "agentReasoning": { "explore": "high" },
+  "env": {
+    "OMX_DEFAULT_SPARK_MODEL": "tecent-free/deepseek-v4.1-flash",
+    "OMX_DEFAULT_STANDARD_MODEL": "tecent-free/deepseek-v4.1-flash",
+    "OMX_DEFAULT_FRONTIER_MODEL": "codex/gpt-6.1-sol"
+  },
+  "models": { "default": "codex/gpt-6.1-sol" }
+}
+```
+
+Precedence when resolving a role's model, highest first:
+
+角色模型解析优先级，从高到低：
+
+1. `agentModels.<role>` in `.omx-config.json`
+2. The role definition's `exactModel` (hardcoded in `definitions.js`)
+3. `executor` special case → root model
+4. `modelClass`: frontier → root model, fast → spark model, standard → standard model
+
+So overriding at level 1 is the only durable way to keep generated roles off expensive models. Editing the TOML directly works until the next `omx setup`.
+
+因此只有在第 1 层覆盖，才能持久地把生成的角色从昂贵模型上移开。直接改 TOML 只能撑到下次 `omx setup`。
+
+`PER_AGENT_REASONING_EFFORTS` allows `low`, `medium`, `high`, `xhigh`, `max`. A value the model does not support still fails at request time, so pick from the model's own list.
+
+`PER_AGENT_REASONING_EFFORTS` 允许 `low`、`medium`、`high`、`xhigh`、`max`。但模型不支持的档位仍会在请求时失败，所以要从模型自身的档位表里选。
+
 ## Magpie preferences / Magpie 偏好
 
 `~/.config/magpie/settings.json`

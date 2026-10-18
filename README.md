@@ -20,6 +20,7 @@
 | Magpie 启动时回写 `config.toml` | 手改的主模型被改回去 |
 | 任务封条 | 报 `task was sealed`，DeepSeek 读不到任务 |
 | 推理档位模型相关 | `medium` 对某些模型不存在 |
+| 角色文件覆盖默认值 | 配置全对，子代理仍烧 `gpt-6-astra` |
 
 ### 安装
 
@@ -73,6 +74,8 @@ multi_agent_v2 = false                        # 必须关闭
 python scripts/doctor.py check      # 诊断
 python scripts/doctor.py fix        # 安全修复（先备份）
 python scripts/doctor.py routing    # 看实际路由了什么
+python scripts/doctor.py roles      # 角色文件是否偏离目标模型
+python scripts/doctor.py pin-roles  # 把所有角色固定到同一模型
 ```
 
 在 Codex 里直接说「配置 Codex + Magpie 双模型」也会触发这个 skill。
@@ -121,6 +124,7 @@ The routing itself is easy. Four traps are what cost people hours, and this skil
 | Magpie rewrites `config.toml` at startup | Your hand-edited lead model reverts |
 | Task sealing | `task was sealed`; DeepSeek cannot read the task |
 | Reasoning levels are per-model | `medium` does not exist on some models |
+| Role files beat the default | Config is right, subagents still bill `gpt-6-astra` |
 
 ### Install
 
@@ -169,6 +173,8 @@ Any change requires a **new thread**; old sessions keep the old protocol.
 python scripts/doctor.py check      # diagnose
 python scripts/doctor.py fix        # apply safe fixes (backs up first)
 python scripts/doctor.py routing    # show what actually got served
+python scripts/doctor.py roles      # flag roles that drift from the intended model
+python scripts/doctor.py pin-roles  # point every role at one model
 ```
 
 Asking Codex to "set up Codex + Magpie dual-model routing" also triggers the skill.

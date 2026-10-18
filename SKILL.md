@@ -15,6 +15,8 @@ A GPT lead plans and reviews; a cheaper Magpie-served model implements. Both tal
 python scripts/doctor.py check      # diagnose only / 只诊断
 python scripts/doctor.py fix        # apply safe fixes / 应用安全修复
 python scripts/doctor.py routing    # what actually got served / 实际路由了什么
+python scripts/doctor.py roles      # role files vs intended model / 角色文件与目标模型对比
+python scripts/doctor.py pin-roles  # point every role at one model / 把所有角色固定到同一模型
 ```
 
 `check` never writes. `fix` backs up before touching anything. Always print the doctor output before hand-editing config — most reported failures are one of the four traps below.
@@ -55,6 +57,45 @@ Codex 的 ChatGPT 模型会把子代理任务加密，只有同一后端能解�
 Never assume `medium` exists. Read the model's `supported_reasoning_levels` from `magpie models` or `/v1/models` and pick from that list. As of this writing `tecent-free/deepseek-v4.1-flash` exposes only `low`, `high`, `max`.
 
 不要假设 `medium` 一定可用。以 `magpie models` 或 `/v1/models` 返回的 `supported_reasoning_levels` 为准。撰写时 `tecent-free/deepseek-v4.1-flash` 只有 `low`、`high`、`max`。
+
+### 5. Role files silently beat the default / 角色文件会压过默认设置
+
+This is the one that looks like a total failure of the setup. A workspace configured correctly can still burn the most expensive model on every subagent, because `default_subagent_model` only applies when a spawn names no model **and** no role file overrides it. Role files carry their own `model`, and that wins.
+
+这一条最容易被误判成整套配置失效。配置完全正确的环境，仍然可能在每个子代理上烧最贵的模型——因为 `default_subagent_model` 只在“派生时未指定模型**且**没有角色覆盖”时才生效。角色文件自带 `model`，优先级更高。
+
+With `oh-my-codex` installed, `~/.codex/agents/*.toml` are generated from built-in definitions that hardcode `gpt-6-astra` and `gpt-6-luna` for 18 roles. The lead asks for `agent_type="explore"` or `"researcher"`, and the gateway serves `gpt-6-astra` even though the default subagent model says DeepSeek.
+
+装了 `oh-my-codex` 时，`~/.codex/agents/*.toml` 由内置定义生成，18 个角色硬编码了 `gpt-6-astra` 和 `gpt-6-luna`。主代理一喊 `agent_type="explore"` 或 `"researcher"`，网关就发 `gpt-6-astra`，哪怕默认子代理模型写的是 DeepSeek。
+
+Diagnose from the rollout, not from config. The `spawn_agent` call records the `agent_type`, and the gateway log records what answered:
+
+从会话记录判断，不要只看配置。`spawn_agent` 调用里记着 `agent_type`，网关日志记着实际应答的模型：
+
+```bash
+python scripts/doctor.py roles        # role files vs. intended model
+python scripts/doctor.py routing      # what actually answered
+```
+
+Fix through OMX's own config so a later `omx setup` does not undo it:
+
+通过 OMX 自己的配置修复，避免下次 `omx setup` 覆盖掉：
+
+```json
+// ~/.codex/.omx-config.json
+{
+  "agentModels":   { "explore": "tecent-free/deepseek-v4.1-flash", "researcher": "tecent-free/deepseek-v4.1-flash" },
+  "agentReasoning": { "explore": "high", "researcher": "high" }
+}
+```
+
+`agentModels` is read with the highest priority in `resolveAgentModel`, above the hardcoded `exactModel`. Then re-run `omx setup` so the role files regenerate. Listing every role is tedious; `scripts/doctor.py pin-roles` writes the mapping for all of them.
+
+`agentModels` 在 `resolveAgentModel` 中优先级最高，压过硬编码的 `exactModel`。之后重跑 `omx setup` 让角色文件重新生成。逐个列角色很繁琐，`scripts/doctor.py pin-roles` 可以一次写全。
+
+If you do not use OMX, edit the `model` line in each role file directly — but expect any generator to overwrite it.
+
+如果你不用 OMX，直接改各角色文件的 `model` 行也可以，但要预期生成器会覆盖。
 
 ## Reference layout / 参照配置
 

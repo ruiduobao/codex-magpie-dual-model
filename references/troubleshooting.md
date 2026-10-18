@@ -6,6 +6,42 @@ Match the exact error text first; these messages are specific enough to identify
 
 ## Error → cause → fix / 报错对照表
 
+### A subagent bills an expensive model despite correct config
+
+**Cause:** A role file carries its own `model`, and a role's model beats `[agents] default_subagent_model`. With `oh-my-codex`, 18 generated roles hardcode `gpt-6-astra` or `gpt-6-luna`. The lead spawning `agent_type="explore"` gets astra, not the default.
+
+**原因：** 角色文件自带 `model`，其优先级高于 `[agents] default_subagent_model`。装了 `oh-my-codex` 时，18 个生成的角色硬编码了 `gpt-6-astra` 或 `gpt-6-luna`。主代理派生 `agent_type="explore"` 拿到的是 astra，不是默认模型。
+
+**Diagnose:** confirm which role was requested, then which model answered.
+
+**诊断：** 先确认请求的是哪个角色，再看实际应答的模型。
+
+```bash
+python scripts/doctor.py roles      # flags every drifted role
+python scripts/doctor.py routing    # shows req vs. served
+```
+
+The rollout file records the `agent_type` passed to `spawn_agent`; the gateway log records what served it. Neither the config file nor the subagent's self-description is evidence.
+
+会话记录里有传给 `spawn_agent` 的 `agent_type`，网关日志里有实际服务的模型。配置文件与子代理自述都不能作为证据。
+
+**Fix:** pin all roles while keeping each role's prompt.
+
+**修复：** 固定全部角色，同时保留各自提示词。
+
+```bash
+python scripts/doctor.py pin-roles --model tecent-free/deepseek-v4.1-flash --effort high
+omx setup     # regenerate generated role files
+```
+
+`pin-roles` writes `agentModels` / `agentReasoning` into `~/.codex/.omx-config.json`, which `resolveAgentModel` reads before the hardcoded `exactModel`. A later `omx setup` keeps the pin.
+
+`pin-roles` 会写入 `~/.codex/.omx-config.json` 的 `agentModels` 与 `agentReasoning`，`resolveAgentModel` 在读硬编码 `exactModel` 之前先读它；之后再跑 `omx setup` 也不会丢。
+
+Without OMX, edit each role's `model` line instead, expecting any generator to overwrite it.
+
+不用 OMX 的话，直接改各角色的 `model` 行，但要预期生成器会覆盖。
+
 ### `Unknown model 'on' for spawn_agent. Available models: ...`
 
 **Cause:** `magpie codex subagent on` wrote the literal string `"on"` into `[agents] default_subagent_model`. It is a malformed CLI invocation, not a switch.

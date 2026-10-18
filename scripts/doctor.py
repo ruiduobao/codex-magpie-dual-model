@@ -311,6 +311,10 @@ def check_roles(rep: Report, cfg: dict) -> None:
     if not roles:
         rep.add(OK, "No role files; default subagent model applies to every spawn")
         return
+
+    intended = (agents_dir_models() or (cfg.get("agents") or {}).get("default_subagent_model"))
+    drifted: list[str] = []
+
     for path in roles:
         text = path.read_text(encoding="utf-8", errors="replace")
         has_name = re.search(r'^\s*name\s*=\s*"([^"]+)"', text, re.M)
@@ -324,10 +328,75 @@ def check_roles(rep: Report, cfg: dict) -> None:
         if name != path.stem:
             rep.add(WARN, f"{path.name}: name '{name}' differs from filename",
                     "Harmless, but the role is addressed by `name`, not by filename.")
-        detail = f"model={model.group(1) if model else 'inherited'}"
+        role_model = model.group(1) if model else None
+        detail = f"model={role_model or 'inherited'}"
         if effort:
             detail += f", effort={effort.group(1)}"
-        rep.add(OK, f"Role '{name}' loaded ({path.name})", detail)
+        if intended and role_model and role_model != intended:
+            drifted.append(f"{name} -> {role_model}")
+            rep.add(FAIL, f"Role '{name}' overrides to {role_model}", detail)
+        else:
+            rep.add(OK, f"Role '{name}' loaded ({path.name})", detail)
+
+    if drifted:
+        rep.add(FAIL, f"{len(drifted)} role(s) do not use the intended subagent model",
+                f"Intended: {intended}\n"
+                "Role files win over default_subagent_model, so spawns on these roles\n"
+                "bill the override instead. Run `doctor.py pin-roles` to pin them all.")
+
+
+def agents_dir_models() -> str | None:
+    """The subagent model this doctor believes every role should use."""
+    cfg = load_codex_config()
+    return (cfg.get("agents") or {}).get("default_subagent_model")
+
+
+def omx_config_path() -> Path:
+    return CODEX_HOME / ".omx-config.json"
+
+
+def pin_roles(model: str, effort: str) -> int:
+    """Pin every role file to one model via OMX's own config, then note the next step."""
+    agents_dir = CODEX_HOME / "agents"
+    if not agents_dir.is_dir():
+        print(f"No agents directory at {agents_dir}", file=sys.stderr)
+        return 2
+
+    names = []
+    for path in sorted(agents_dir.glob("*.toml")):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        match = re.search(r'^\s*name\s*=\s*"([^"]+)"', text, re.M)
+        if match:
+            names.append(match.group(1))
+        else:
+            names.append(path.stem)
+
+    path = omx_config_path()
+    cfg: dict = {}
+    if path.is_file():
+        try:
+            cfg = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            print(f"Cannot read {path}: {exc}", file=sys.stderr)
+            return 2
+        saved = backup(path)
+        print(f"Backed up {path} -> {saved}")
+
+    cfg.setdefault("agentModels", {})
+    cfg.setdefault("agentReasoning", {})
+    for name in names:
+        cfg["agentModels"][name] = model
+        cfg["agentReasoning"][name] = effort
+    path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    print(f"Pinned {len(names)} role(s) to {model} (effort {effort}) in {path}")
+    print()
+    print("If oh-my-codex generated these files, regenerate them now:")
+    print("  omx setup")
+    print()
+    print("If you edited them by hand instead, change each `model =` line directly.")
+    print("Then spawn a role and confirm with: doctor.py routing")
+    return 0
 
 
 def check_usage(rep: Report) -> None:
@@ -510,13 +579,26 @@ def main() -> int:
         "mode",
         nargs="?",
         default="check",
-        choices=["check", "fix", "routing"],
-        help="check (read-only), fix (apply safe fixes), routing (show served models)",
+        choices=["check", "fix", "routing", "roles", "pin-roles"],
+        help="check (read-only), fix (apply safe fixes), routing (show served models), "
+             "roles (role files vs intended model), pin-roles (point every role at one model)",
     )
+    parser.add_argument("--model", help="model id for pin-roles")
+    parser.add_argument("--effort", default="high", help="reasoning effort for pin-roles")
     args = parser.parse_args()
 
     if args.mode == "routing":
         return routing_summary()
+
+    if args.mode == "pin-roles":
+        cfg = load_codex_config()
+        model = args.model or agents_dir_models()
+        if not model:
+            print("No model given and no [agents] default_subagent_model in config.",
+                  file=sys.stderr)
+            print("Pass --model <provider/model>.", file=sys.stderr)
+            return 2
+        return pin_roles(model, args.effort)
 
     base = gateway_base()
     cfg = load_codex_config()
@@ -529,10 +611,11 @@ def main() -> int:
     check_config(rep, cfg)
     check_pref(rep)
     check_roles(rep, cfg)
-    if reachable:
-        check_models(rep, base, lead, worker)
-        check_effort(rep, base, cfg)
-    check_usage(rep)
+    if args.mode != "roles":
+        if reachable:
+            check_models(rep, base, lead, worker)
+            check_effort(rep, base, cfg)
+        check_usage(rep)
 
     if args.mode == "fix":
         print("=== before ===")
