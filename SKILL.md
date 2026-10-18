@@ -110,7 +110,24 @@ If you do not use OMX, edit the `model` line in each role file directly — but 
 
 ### 6. Background jobs look like subagent misroutes / 后台任务会被误认成子代理走错
 
-Before concluding that subagents ignore your config, check the `kind` field in `~/.config/magpie/usage.jsonl`. Requests with `kind: "memory_consolidation"` are Codex's memory jobs, not subagents. They run on their own model, default to a Codex model, and show up as a bare model name with no provider prefix — which reads exactly like a misrouted subagent if you only look at model names.
+Before concluding that subagents ignore your config, check the `kind` field in `~/.config/magpie/usage.jsonl`. Codex runs several helper jobs on their own models, and each looks like a misroute if you only read model names:
+
+在断定子代理无视配置之前，先看 `~/.config/magpie/usage.jsonl` 里的 `kind` 字段。Codex 有几个后台作业各用自己的模型，只看模型名的话每一个都像子代理走错：
+
+| `kind` | What it is / 是什么 |
+|---|---|
+| `memory_consolidation` | Memory extraction and consolidation / 记忆提取与整理 |
+| `thread_title` | Naming new threads / 给新会话起标题 |
+| `guardian` | Approval review / 审批审查 |
+| `compaction` | Summarizing long context / 压缩长上下文 |
+
+Only `collab_spawn` is a subagent. The rest carry a bare model name with no provider prefix, default to Codex models, and appear at the same timestamps as your test run — which is exactly why they get mistaken for subagent traffic.
+
+只有 `collab_spawn` 才是子代理。其余都是不带 provider 前缀的裸模型名、默认走 Codex 模型，而且和你测试的时间戳挨在一起，所以特别容易被误认成子代理流量。
+
+Codex's own title picker lives in Magpie's Settings (it is not a `config.toml` field and not a `magpie codex` field). Memory jobs are configurable:
+
+Codex 的标题模型在 Magpie 设置页里（它不是 `config.toml` 字段，也不是 `magpie codex` 的字段）。记忆作业可以配置：
 
 在断定子代理无视配置之前，先看 `~/.config/magpie/usage.jsonl` 里的 `kind` 字段。`kind: "memory_consolidation"` 是 Codex 的记忆整理任务，不是子代理。它们用自己的模型（默认是 Codex 的模型），日志里表现为不带 provider 前缀的裸模型名——只看模型名的话，和子代理走错完全一样。
 
@@ -133,6 +150,16 @@ A running session reads role files and the model catalog at startup. After chang
 There is no migration path. Start a new thread and re-test. Do not debug the config on the basis of an old session.
 
 没有迁移路径。新开会话重测。不要拿旧会话的表现去调配置。
+
+### 8. `magpie codex <word>` silently treats any unknown word as a model / 未识别的词会被当成模型名
+
+`magpie codex title` does not error. There is no `title` field, so Magpie treats `title` as a model id and writes `model = "title"` into `config.toml`, breaking the lead. The same happens with any field name you guess wrong. Always run `magpie codex` first and read the field list it prints: `model, effort, subagent, subagent_model, subagent_effort, memories, login`.
+
+`magpie codex title` 不会报错。因为没有 `title` 字段，Magpie 会把 `title` 当成模型 id 写进 `config.toml` 的 `model`，直接搞坏主模型。任何猜错的字段名都会这样。务必先跑 `magpie codex` 看它打印的字段表：`model, effort, subagent, subagent_model, subagent_effort, memories, login`。
+
+Recovery: `doctor.py check` reports the lead model as invalid, and `doctor.py fix` does not guess. Set it back with `magpie codex <provider/model>`.
+
+恢复办法：`doctor.py check` 会把主模型判为无效，`doctor.py fix` 不会替你猜。用 `magpie codex <provider/model>` 改回来。
 
 ## Reference layout / 参照配置
 

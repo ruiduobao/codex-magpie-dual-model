@@ -8,9 +8,9 @@ Match the exact error text first; these messages are specific enough to identify
 
 ### A model you never configured shows up in the usage log
 
-**Cause:** Check the `kind` field before assuming a misroute. `memory_consolidation`, `guardian`, and compaction are Codex's own background jobs. They use their own model and appear as a bare model name with no provider prefix.
+**Cause:** Check the `kind` field before assuming a misroute. `memory_consolidation`, `thread_title`, `guardian`, and compaction are Codex's own background jobs. They use their own model and appear as a bare model name with no provider prefix. Only `collab_spawn` is a subagent. A `thread_title` request in particular lands at the same second as your test spawns, so it reads as a subagent in a UI that lists requests by time.
 
-**原因：** 先看 `kind` 字段再判断是否走错。`memory_consolidation`、`guardian`、压缩任务是 Codex 自己的后台作业，用自己的模型，日志里是不带 provider 前缀的裸模型名。
+**原因：** 先看 `kind` 字段再判断是否走错。`memory_consolidation`、`thread_title`、`guardian`、压缩任务是 Codex 自己的后台作业，用自己的模型，日志里是不带 provider 前缀的裸模型名。只有 `collab_spawn` 才是子代理。尤其是 `thread_title`，它常常和你测试派生的时刻出现在同一秒，在按时间列请求的面板里就跟子代理一样。
 
 ```bash
 python scripts/doctor.py routing   # splits collab_spawn from background kinds
@@ -41,6 +41,21 @@ Writes `[memories] extract_model` and `consolidation_model`.
 **Fix:** start a new thread. There is no in-place migration, and debugging config against an old session wastes time.
 
 **修复：** 新开会话。没有原地迁移，拿旧会话调配置只会浪费时间。
+
+### Lead model became a word like `"title"`
+
+**Cause:** `magpie codex <anything>` treats an unrecognized word as a model id. `magpie codex title` has no matching field, so Magpie writes `model = "title"` and the lead breaks.
+
+**原因：** `magpie codex <任意词>` 会把无法识别的词当成模型 id。`magpie codex title` 没有对应字段，于是 Magpie 写入 `model = "title"`，主模型就坏了。
+
+**Fix:** `magpie codex` prints the real field list — `model, effort, subagent, subagent_model, subagent_effort, memories, login`. Set the lead back:
+
+**修复：** `magpie codex` 会打印真实字段表。把主模型改回来：
+
+```bash
+magpie codex codex/gpt-6.1-sol
+python scripts/doctor.py check    # confirms the lead model resolves
+```
 
 ### A subagent bills an expensive model despite correct config
 
